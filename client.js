@@ -1,40 +1,61 @@
 import * as rules from './logic.js';
 let peer=null,link=null,isHost=false,gameState=null,settleUntil=0,session=0,localMode=false,localSeat='host',connectTimer=null;
+
+let relaySource=null,relayTimer=null,relayReady=false,relayActive=false,relayGuest=null,moveLog=[],round=0;
+let relayToken=crypto.randomUUID();
+async function relayPost(m){const data=JSON.stringify({...m,sender:relayToken});if(data.length>3900)throw Error('Die Runde ist zu lang für die Ersatzverbindung.');const r=await fetch('https://ntfy.sh/towerduell-v5-'+room,{method:'POST',headers:{'Content-Type':'text/plain'},body:data});if(!r.ok)throw Error(r.status===429?'Tageslimit der Ersatzverbindung erreicht. Bitte später erneut versuchen.':'Ersatzverbindung nicht erreichbar.');}
+function startRelay(ticket){if(ticket!==session||link?.open||localMode)return;
+ relaySource=new EventSource('https://ntfy.sh/towerduell-v5-'+room+'/sse');
+ relaySource.onopen=()=>{if(ticket!==session)return;if(!isHost)relayPost({kind:'join'}).catch(relayError);};
+ relaySource.onmessage=e=>{if(ticket!==session||link?.open)return;let m;try{m=JSON.parse(JSON.parse(e.data).message);}catch{return;}if(m.sender===relayToken)return;
+ if(isHost){
+  if(m.kind==='join'&&(!relayGuest||relayGuest===m.sender)){relayGuest=m.sender;relayReady=true;relayActive=true;online=true;if(!gameState){gameState=rules.setup(['host','guest']);moveLog=[];}$('#connection').textContent='● Ihr seid verbunden · Ersatzverbindung';broadcast();}
+  else if(m.kind==='intent'&&relayReady&&m.sender===relayGuest)applyIntent(m.intent,'guest');
+ }else if(m.kind==='sync'&&m.recipient===relayToken&&Array.isArray(m.moves)&&m.moves.length<=150&&Number.isInteger(m.round)){
+  if(m.round<round)return;
+  let s=rules.setup(['host','guest']);try{for(const x of m.moves){if(!Number.isFinite(x)||Math.abs(x)>220)throw Error('x');s=rules.applyAction(s,s.turn,{type:'drop',x,angle:0,move:s.move});}}catch{return;}
+  if(gameState&&m.round===round&&s.move<gameState.move)return;
+  round=m.round;gameState=s;relayActive=true;relayReady=true;online=true;sending=false;$('#connection').textContent='● Ihr seid verbunden · Ersatzverbindung';receive(stateFor('guest'));
+ }};
+ relaySource.onerror=()=>{if(ticket!==session||link?.open)return;$('#connection').textContent=relayReady?'Verbindung unterbrochen – wird erneut aufgebaut …':'Online-Verbindung wird aufgebaut …';};
+}
+function relayError(e){sending=false;toast(e.message||'Verbindungsfehler. Bitte erneut beitreten.');updateUI();}
+
 const validRoom=c=>/^[A-Z0-9_-]{3,32}$/.test(c);
 function roomURL(){const u=new URL(location.href);u.search='';u.searchParams.set('room',room);return u.href;}
-function disconnect(){session++;clearTimeout(connectTimer);if(link){link.close();link=null;}if(peer){peer.destroy();peer=null;}online=false;gameState=null;settleUntil=0;}
-function stateFor(who){return {type:'state',status:gameState?(rules.isGameOver(gameState).over?'over':'playing'):'waiting',seats:gameState?['host','guest']:['host'],you:who,connected:localMode?2:link?.open?2:1,view:gameState?rules.viewFor(gameState,who):null,result:gameState?rules.isGameOver(gameState):null,meta:rules.meta};}
-function broadcast(){receive(stateFor(localMode?localSeat:'host'));if(link?.open)link.send({type:'snapshot',packet:stateFor('guest')});}
+function disconnect(){session++;clearTimeout(relayTimer);if(relaySource)relaySource.close();relaySource=null;relayReady=false;relayActive=false;relayGuest=null;moveLog=[];round=0;clearTimeout(connectTimer);if(link){link.close();link=null;}if(peer){peer.destroy();peer=null;}online=false;gameState=null;settleUntil=0;}
+function stateFor(who){return {type:'state',status:gameState?(rules.isGameOver(gameState).over?'over':'playing'):'waiting',seats:gameState?['host','guest']:['host'],you:who,connected:localMode||relayReady?2:link?.open?2:1,view:gameState?rules.viewFor(gameState,who):null,result:gameState?rules.isGameOver(gameState):null,meta:rules.meta};}
+function broadcast(){receive(stateFor(localMode?localSeat:'host'));if(relayReady&&isHost)relayPost({kind:'sync',moves:moveLog,round,recipient:relayGuest}).catch(relayError);if(link?.open)link.send({type:'snapshot',packet:stateFor('guest')});}
 function applyIntent(m,who){
  if(!gameState)return false;
- if(!localMode&&(!link?.open)){toast('Warte, bis dein Freund verbunden ist.');return false;}
- if(m.type==='reset'){if(!rules.isGameOver(gameState).over){toast('Die Runde läuft noch.');return false;}gameState=rules.setup(['host','guest']);localSeat='host';animMove=-1;settleUntil=0;broadcast();return true;}
+ if(!localMode&&!relayReady&&(!link?.open)){toast('Warte, bis dein Freund verbunden ist.');return false;}
+ if(m.type==='reset'){if(!rules.isGameOver(gameState).over){toast('Die Runde läuft noch.');return false;}gameState=rules.setup(['host','guest']);moveLog=[];round++;localSeat='host';animMove=-1;settleUntil=0;broadcast();return true;}
  if(m.type!=='action')return false;
  if(performance.now()<settleUntil){toast('Der Turm setzt sich noch.');return false;}
  const verdict=rules.validateAction(gameState,who,m.action);if(!verdict.ok){if(who==='host'||localMode)toast(verdict.error);else if(link?.open)link.send({type:'error',error:verdict.error});return false;}
- gameState=rules.applyAction(gameState,who,m.action);settleUntil=performance.now()+3050;
+ gameState=rules.applyAction(gameState,who,m.action);moveLog.push(m.action.x);settleUntil=performance.now()+3050;
  if(localMode)localSeat=gameState.turn;broadcast();return true;
 }
 function start(code,host=false){
  code=String(code||'').trim().toUpperCase();if(!validRoom(code)){toast('Raumcode: 3–32 Buchstaben oder Ziffern.');return;}
- disconnect();localMode=false;room=code;isHost=host;packet=null;animMove=-1;animating=false;sending=false;$('#roomInput').value=room;
+ disconnect();localMode=false;room=code;isHost=host;const tokenKey='td:relay:'+room+':'+host;relayToken=sessionStorage.getItem(tokenKey)||crypto.randomUUID();sessionStorage.setItem(tokenKey,relayToken);packet=null;animMove=-1;animating=false;sending=false;$('#roomInput').value=room;
  history.replaceState(null,'',roomURL());sessionStorage.setItem('td:hostRoom',host?room:'');
  $('#connection').textContent=host?'Raum wird erstellt …':'Verbinde mit deinem Freund …';setStatus('Verbindung wird hergestellt …');$('#drop').disabled=true;
  if(typeof Peer!=='function'){toast('Verbindung konnte nicht geladen werden. Bitte Seite neu laden.');return;}
- const ticket=session;
+ const ticket=session;relayTimer=setTimeout(()=>startRelay(ticket),9000);
  peer=host?new Peer('towerduell-v3-'+room,{debug:0}):new Peer('towerduell-guest-'+crypto.randomUUID(),{debug:0});
  peer.on('open',()=>{if(ticket!==session)return;
   if(host){online=true;$('#connection').textContent='● Raum '+room+' bereit – Freund einladen';receive(stateFor('host'));}
   else {$('#connection').textContent='Raum gefunden – direkte Verbindung wird aufgebaut …';link=peer.connect('towerduell-v3-'+room,{reliable:true,serialization:'json'});attach(link,ticket);}});
  peer.on('connection',c=>{if(ticket!==session)return;if(!isHost||link?.open){c.on('open',()=>{c.send({type:'error',error:'Dieser Raum ist bereits voll.'});setTimeout(()=>c.close(),200);});return;}link=c;attach(c,ticket);});
- peer.on('error',e=>{if(ticket!==session)return;online=false;$('#drop').disabled=true;sending=false;
+ peer.on('error',e=>{if(ticket!==session||relayReady)return;online=false;$('#drop').disabled=true;sending=false;
   const msg=e.type==='peer-unavailable'?'Raum nicht erreichbar. Dein Freund muss zuerst „Neuer Raum“ öffnen.':e.type==='unavailable-id'?'Dieser Raumcode ist belegt. Erstelle einen neuen Raum.':'Verbindung fehlgeschlagen. Versuche es erneut oder teste ohne VPN.';
   $('#connection').textContent=msg;setStatus(msg);toast(msg);});
  peer.on('disconnected',()=>{if(ticket===session&&!peer.destroyed)peer.reconnect();});
- connectTimer=setTimeout(()=>{if(ticket===session&&!link?.open&&!isHost){$('#connection').textContent='Keine direkte Verbindung. Bitte anderes WLAN oder Mobilfunk testen.';setStatus('Verbindung dauert zu lange. Erneut beitreten oder anderes Netz testen.');}},18000);
+ connectTimer=setTimeout(()=>{if(ticket===session&&!link?.open&&!relayReady&&!isHost){$('#connection').textContent='Ersatzverbindung wird aufgebaut …';setStatus('Die Online-Verbindung braucht einen Moment …');}},18000);
 }
 function attach(c,ticket){
- c.on('open',()=>{if(ticket!==session){c.close();return;}clearTimeout(connectTimer);online=true;$('#connection').textContent='● Ihr seid verbunden · Raum '+room;
+ c.on('open',()=>{if(ticket!==session||relayActive){c.close();return;}clearTimeout(connectTimer);clearTimeout(relayTimer);if(relaySource)relaySource.close();online=true;$('#connection').textContent='● Ihr seid verbunden · Raum '+room;
   if(isHost){if(!gameState)gameState=rules.setup(['host','guest']);broadcast();}
  });
  c.on('data',m=>{if(ticket!==session||!m||typeof m!=='object')return;
@@ -42,10 +63,10 @@ function attach(c,ticket){
   else if(m.type==='snapshot'&&m.packet?.meta?.game==='Tower Duell'){sending=false;receive(m.packet);}
   else if(m.type==='error'){sending=false;toast(String(m.error).slice(0,150));updateUI();}
  });
- c.on('close',()=>{if(ticket!==session)return;online=false;sending=false;$('#drop').disabled=true;$('#connection').textContent='Dein Freund ist nicht mehr verbunden.';setStatus(isHost?'Dein Freund kann mit demselben Link wieder beitreten.':'Verbindung getrennt. Bitte erneut beitreten.');});
+ c.on('close',()=>{if(ticket!==session||relayReady)return;online=false;sending=false;$('#drop').disabled=true;$('#connection').textContent='Dein Freund ist nicht mehr verbunden.';setStatus(isHost?'Dein Freund kann mit demselben Link wieder beitreten.':'Verbindung getrennt. Bitte erneut beitreten.');});
  c.on('error',()=>{if(ticket===session){sending=false;toast('Verbindungsfehler. Bitte erneut beitreten.');}});
 }
-function send(m){if(localMode||isHost)return applyIntent(m,localMode?localSeat:'host');if(link?.open){link.send(m);return true;}toast('Noch keine Verbindung zum Spielraum.');return false;}
+function send(m){if(relayActive&&!isHost){relayPost({kind:'intent',intent:m}).catch(relayError);return true;}if(localMode||isHost)return applyIntent(m,localMode?localSeat:'host');if(link?.open){link.send(m);return true;}toast('Noch keine Verbindung zum Spielraum.');return false;}
 function startLocal(){disconnect();localMode=true;room='';online=true;packet=null;animMove=-1;animating=false;sending=false;localSeat='host';gameState=rules.setup(['host','guest']);history.replaceState(null,'',location.pathname);$('#connection').textContent='● Zu zweit an diesem Gerät – nach jedem Zug abwechseln';broadcast();}
 
 const $=s=>document.querySelector(s),canvas=$('#canvas'),ctx=canvas.getContext('2d'),slider=$('#position');
