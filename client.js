@@ -22,10 +22,10 @@ function start(code,host=false){
  $('#connection').textContent=host?'Raum wird erstellt …':'Verbinde mit deinem Freund …';setStatus('Verbindung wird hergestellt …');$('#drop').disabled=true;
  if(typeof Peer!=='function'){toast('Verbindung konnte nicht geladen werden. Bitte Seite neu laden.');return;}
  const ticket=session;
- peer=host?new Peer('towerduell-v3-'+room,{debug:0}):new Peer(undefined,{debug:0});
+ peer=host?new Peer('towerduell-v3-'+room,{debug:0}):new Peer('towerduell-guest-'+crypto.randomUUID(),{debug:0});
  peer.on('open',()=>{if(ticket!==session)return;
   if(host){online=true;$('#connection').textContent='● Raum '+room+' bereit – Freund einladen';receive(stateFor('host'));}
-  else {link=peer.connect('towerduell-v3-'+room,{reliable:true,serialization:'json'});attach(link,ticket);}});
+  else {$('#connection').textContent='Raum gefunden – direkte Verbindung wird aufgebaut …';link=peer.connect('towerduell-v3-'+room,{reliable:true,serialization:'json'});attach(link,ticket);}});
  peer.on('connection',c=>{if(ticket!==session)return;if(!isHost||link?.open){c.on('open',()=>{c.send({type:'error',error:'Dieser Raum ist bereits voll.'});setTimeout(()=>c.close(),200);});return;}link=c;attach(c,ticket);});
  peer.on('error',e=>{if(ticket!==session)return;online=false;$('#drop').disabled=true;sending=false;
   const msg=e.type==='peer-unavailable'?'Raum nicht erreichbar. Dein Freund muss zuerst „Neuer Raum“ öffnen.':e.type==='unavailable-id'?'Dieser Raumcode ist belegt. Erstelle einen neuen Raum.':'Verbindung fehlgeschlagen. Versuche es erneut oder teste ohne VPN.';
