@@ -1,23 +1,21 @@
 # Tower Duell
 
-Deutsches Online-Stapelspiel für zwei Personen. Raum erstellen, Link teilen und abwechselnd Blöcke platzieren. Der Spieler, dessen Zug den Turm umwirft, verliert.
+## Direkt spielen
 
-## Starten
+https://reiskornlimit.github.io/hunger-nordafrika/tower-duell/
 
-Die erste Version wurde unter https://tower-duell.higgsfield.app bereitgestellt. Der Hoster antwortete beim letzten öffentlichen Zugriff jedoch mit HTTP 401 (`unauthenticated`). Daher ist Online-Spiel über diesen Host noch nicht öffentlich bestätigt. Der Client in `app/public/` kann auch auf GitHub Pages laufen; dort verbindet er sich mit diesem Spielserver. GitHub Pages allein führt keine WebSocket-Server aus.
+„Neuer Raum“ wählen und den Einladungslink mit einem Freund teilen. Beide Seiten offen lassen. Ihr stapelt abwechselnd; wer den Turm umwirft, verliert. Alternativ könnt ihr an einem Gerät spielen.
+
+## Technik
+
+Die Dateien im Repository-Hauptverzeichnis laufen vollständig statisch auf GitHub Pages. PeerJS 1.5.5 (MIT, unter vendor/) vermittelt eine WebRTC-Datenverbindung über den öffentlichen PeerJS-Signalisierungsdienst. Ein Browser übernimmt die Spielleitung und prüft Züge. Es wird kein eigener Spielserver und kein Higgsfield-Login benötigt. Der ursprüngliche Serverentwurf unter app/ ist archivierter Entwicklungsstand und wird von der statischen Version nicht verwendet.
+
+Manche restriktiven Netzwerke verhindern direkte WebRTC-Verbindungen. In diesem Fall Mobilfunk oder anderes WLAN testen. Keine Garantie für Betrugsschutz gegenüber einem manipulierten Gastgeber.
 
 ## Physik
 
-Vereinfachtes quasistatisches Modell: pro Kontaktfläche werden Gewichtsschwerpunkt und Windmomente aller darüber liegenden Blöcke berechnet. Verlässt die resultierende Kraft die tatsächliche Auflagefläche, kippt der Turm. Der Wind ist vor dem Zug sichtbar und nimmt mit der Blockzahl zu. Fall und Einsturz werden animiert. Dies ist kein vollständiger dynamischer Starrkörper-Solver mit Reibung und Kollisionen.
+Vereinfachtes quasistatisches Modell: Schwerpunkt, Auflagefläche und Windmomente aller darüber liegenden Blöcke entscheiden über Stabilität. Kein vollständiger dynamischer Starrkörper-Solver. Wind steigt mit der Turmhöhe; ein Einsturz wird animiert.
 
-## Entwicklung
+## Eigene GitHub-Pages-Adresse
 
-Projekt unter `app/`, Cloudflare Worker mit Durable-Object-Spielräumen. `src/logic.js` enthält deterministische Regeln; der Server prüft Zugfolge, Eingaben und Zuschauerrechte. Keine geheimen Schlüssel im Client.
-
-`node app/tests/physics.mjs` prüft Regeln und Statik ohne Abhängigkeiten. Mit installiertem Bun und Projektabhängigkeiten: `cd app`, `bun run build`, `bun run test`.
-
-Private Raumcodes dienen der Zuordnung, nicht als sichere Authentifizierung. Mitspielende sollten vertrauenswürdig sein.
-
-## Prüfstatus
-
-Die deterministischen Physik- und Eingabeprüfungen bestehen. Zwei lokale Browser wurden mit einem simulierten WebSocket-Transport auf Zugwechsel, identischen Spielstand, Niederlage, Sieg, Revanche und mobile Darstellung geprüft. Die Cloudflare-WebSocket-Tests sind mitgeliefert; sie konnten mangels Bun und installierter Abhängigkeiten in der Entwicklungsumgebung noch nicht ausgeführt werden.
+In Settings → Pages die Quelle „Deploy from a branch“, Branch „main“, Ordner „/(root)“ auswählen. Dann läuft derselbe Stand auch unter https://reiskornlimit.github.io/tower-duell/.
