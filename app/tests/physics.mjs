@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import * as l from '../src/logic.js';
+const initial=l.setup(['a','b']);
+assert.equal(l.validateAction(initial,'b',{type:'drop',x:0,angle:0,move:0}).ok,false);
+for(const x of [NaN,Infinity,221,-221])assert.equal(l.validateAction(initial,'a',{type:'drop',x,angle:0,move:0}).ok,false);
+assert.equal(l.validateAction(initial,'a',{type:'drop',x:0,angle:0,move:5}).ok,false);
+const move=(s,x)=>l.applyAction(s,s.turn,{type:'drop',x,angle:0,move:s.move});
+let centered=initial;for(let i=0;i<20;i++)centered=move(centered,0);assert.equal(centered.loser,null);assert.equal(initial.blocks.length,0);assert.notEqual(centered.wind,0);
+const miss=move(initial,210);assert.equal(miss.loser,'a');assert.equal(l.isGameOver(miss).winner,'b');
+let overhang=move(initial,0);overhang=move(overhang,70);assert.equal(overhang.loser,'b');
+assert.deepEqual(move(initial,0),move(initial,0));
+const windy=move({...centered,wind:500},0);assert.ok(windy.loser);
+assert.equal(l.viewFor(centered,'spectator').yourTurn,false);
+console.log('Physics checks passed: deterministic results, stable center, unsupported blocks, torque, wind, immutable state and input validation.');
