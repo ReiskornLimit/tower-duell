@@ -10,7 +10,7 @@ https://reiskornlimit.github.io/hunger-nordafrika/tower-duell/
 
 Die Dateien im Repository-Hauptverzeichnis laufen vollständig statisch auf GitHub Pages. PeerJS 1.5.5 (MIT, unter vendor/) vermittelt eine WebRTC-Datenverbindung über den öffentlichen PeerJS-Signalisierungsdienst. Ein Browser übernimmt die Spielleitung und prüft Züge. Es wird kein eigener Spielserver und kein Higgsfield-Login benötigt. Der ursprüngliche Serverentwurf unter app/ ist archivierter Entwicklungsstand und wird von der statischen Version nicht verwendet.
 
-Manche restriktiven Netzwerke verhindern direkte WebRTC-Verbindungen. In diesem Fall Mobilfunk oder anderes WLAN testen. Keine Garantie für Betrugsschutz gegenüber einem manipulierten Gastgeber.
+Wenn die direkte WebRTC-Verbindung nach neun Sekunden nicht steht, verwenden beide Browser automatisch einen HTTPS-Ersatzkanal über ntfy.sh. Dieser überträgt ausschließlich zufällige Raum-/Verbindungskennungen und Spielzüge; keine Namen oder Kontodaten. ntfy-Themen sind öffentlich: Der zufällige Raumcode sollte nur mit dem Mitspieler geteilt werden. Für den öffentlichen Dienst gelten Tages- und Anfragelimits; bei Überschreitung erscheint ein Fehler. Eine dauerhafte Produktionslösung sollte einen eigenen Relaydienst oder TURN-Server verwenden. Keine Garantie für Betrugsschutz gegenüber einem manipulierten Gastgeber.
 
 ## Physik
 
